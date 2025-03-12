@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAACH FLOWERS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        .grand-total {
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .sunday {
+            font-weight: bold;
+            color: red;
+        }
+        input:disabled {
+            background-color: #f0f0f0;
+            border: none;
+        }
+        #paymentSection {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .offline-warning {
+            color: red;
+            font-weight: bold;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h2>RAACH FLOWERS</h2>
+    
+    <p class="offline-warning" id="offlineWarning">⚠ You are offline! Data will sync when online.</p>
+
+    <div id="loginContainer">
+        <h2>Select Mode:</h2>
+        <button onclick="setMode('admin')">Admin</button>
+        <button onclick="setMode('user')">User</button>
+    </div>
+    
+    <div id="adminLogin" style="display:none;">
+        <h2>Admin Login</h2>
+        <label for="adminPassword">Enter Password:</label>
+        <input type="password" id="adminPassword">
+        <button onclick="verifyAdmin()">Login</button>
+    </div>
+
+    <div id="content" style="display:none;">
+        <label for="monthSelect">Select Month:</label>
+        <select id="monthSelect" onchange="generateTable()">
+            <option value="01">January</option>
+            <option value="02">February</option>
+            <option value="03" selected>March</option>
+            <option value="04">April</option>
+            <option value="05">May</option>
+            <option value="06">June</option>
+            <option value="07">July</option>
+            <option value="08">August</option>
+            <option value="09">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+        </select>
+        
+        <label for="factorySelect">Select Factory:</label>
+        <select id="factorySelect" onchange="generateTable()">
+            <option value="">-- Select Factory --</option>
+            <option value="VINAYAKA 3D TECHNOLOGY">VINAYAKA 3D TECHNOLOGY</option>
+            <option value="KSS">KSS</option>
+            <option value="ALPA">ALPA</option>
+        </select>
+        
+        <table id="deliveryTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Quantity</th>
+                    <th>Amount</th>
+                    <th>Total</th>
+                    <th>Holiday/Sunday</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="grand-total">
+            Grand Total: ₹<span id="grandTotal">0</span>
+        </div>
+
+        <div id="paymentSection">
+            <button onclick="makePayment()">Pay Now</button>
+        </div>
+    </div>
+
+    <script>
+        let userMode = "";
+        let currentMonth = "03";
+        let currentYear = "2025";
+        const upiId = "mmm@axl"; 
+        const syncURL = "https://yourserver.com/api/sync"; // Replace with actual API endpoint
+
+        window.addEventListener("load", checkSync);
+        window.addEventListener("online", syncData);
+        window.addEventListener("offline", () => document.getElementById("offlineWarning").style.display = "block");
+
+        function checkSync() {
+            if (navigator.onLine) {
+                syncData();
+            } else {
+                document.getElementById("offlineWarning").style.display = "block";
+            }
+        }
+
+        function setMode(mode) {
+            userMode = mode;
+            document.getElementById("loginContainer").style.display = "none";
+            if (mode === "admin") {
+                document.getElementById("adminLogin").style.display = "block";
+            } else {
+                document.getElementById("content").style.display = "block";
+                generateTable();
+            }
+        }
+
+        function verifyAdmin() {
+            let password = document.getElementById("adminPassword").value;
+            if (password === "admin12345") {
+                document.getElementById("adminLogin").style.display = "none";
+                document.getElementById("content").style.display = "block";
+                generateTable();
+            } else {
+                alert("Incorrect password!");
+            }
+        }
+
+        function generateTable() {
+            let factory = document.getElementById("factorySelect").value;
+            if (!factory) return;
+
+            currentMonth = document.getElementById("monthSelect").value;
+            let daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+            let tableBody = document.querySelector("#deliveryTable tbody");
+            tableBody.innerHTML = "";
+
+            let storedData = JSON.parse(localStorage.getItem(`${currentMonth}-${factory}`)) || {};
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                let dateKey = `${currentYear}-${currentMonth}-${String(day).padStart(2, '0')}`;
+                let isSunday = new Date(`${currentYear}-${currentMonth}-${day}`).getDay() === 0;
+                let savedData = storedData[dateKey] || { quantity: "", amount: "", total: "" };
+
+                let row = document.createElement("tr");
+                row.innerHTML = `
+                    <td class="${isSunday ? 'sunday' : ''}">${day}/${currentMonth}/${currentYear}</td>
+                    <td><input type="number" class="quantity" min="0" value="${savedData.quantity}" ${userMode === "admin" ? "" : "disabled"} oninput="updateTotal(this, '${dateKey}', '${factory}')"></td>
+                    <td><input type="number" class="amount" min="0" value="${savedData.amount}" ${userMode === "admin" ? "" : "disabled"} oninput="updateTotal(this, '${dateKey}', '${factory}')"></td>
+                    <td><input type="number" class="total" value="${savedData.total}" disabled></td>
+                    <td>${isSunday ? "Sunday" : ""}</td>
+                `;
+                tableBody.appendChild(row);
+            }
+            updateGrandTotal(factory);
+        }
+
+        function updateTotal(input, dateKey, factory) {
+            if (userMode !== "admin") return;
+            let row = input.closest('tr');
+            let quantity = row.querySelector('.quantity').value || 0;
+            let amount = row.querySelector('.amount').value || 0;
+            let total = quantity * amount;
+            row.querySelector('.total').value = total;
+
+            let storedData = JSON.parse(localStorage.getItem(`${currentMonth}-${factory}`)) || {};
+            storedData[dateKey] = { quantity, amount, total };
+            localStorage.setItem(`${currentMonth}-${factory}`, JSON.stringify(storedData));
+
+            updateGrandTotal(factory);
+        }
+
+        function syncData() {
+            document.getElementById("offlineWarning").style.display = "none";
+            console.log("Syncing data...");
+        }
+
+        function makePayment() {
+            let amount = document.getElementById("grandTotal").textContent.trim();
+            if (parseFloat(amount) <= 0) {
+                alert("Invalid amount!");
+                return;
+            }
+            window.location.href = `upi://pay?pa=${upiId}&am=${amount}&cu=INR`;
+        }
+    </script>
+</body>
+</html>
